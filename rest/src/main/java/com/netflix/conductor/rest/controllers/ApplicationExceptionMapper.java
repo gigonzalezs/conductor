@@ -28,6 +28,7 @@ import com.netflix.conductor.common.validation.ErrorResponse;
 import com.netflix.conductor.core.exception.ConflictException;
 import com.netflix.conductor.core.exception.NotFoundException;
 import com.netflix.conductor.core.exception.TransientException;
+import com.netflix.conductor.core.exception.WorkflowTimeoutException;
 import com.netflix.conductor.core.utils.Utils;
 import com.netflix.conductor.metrics.Monitors;
 
@@ -51,6 +52,7 @@ public class ApplicationExceptionMapper {
         EXCEPTION_STATUS_MAP.put(IllegalArgumentException.class, HttpStatus.BAD_REQUEST);
         EXCEPTION_STATUS_MAP.put(InvalidFormatException.class, HttpStatus.INTERNAL_SERVER_ERROR);
         EXCEPTION_STATUS_MAP.put(NoResourceFoundException.class, HttpStatus.NOT_FOUND);
+        EXCEPTION_STATUS_MAP.put(WorkflowTimeoutException.class, HttpStatus.REQUEST_TIMEOUT);
     }
 
     @ExceptionHandler(Throwable.class)

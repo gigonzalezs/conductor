@@ -16,7 +16,6 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -80,58 +79,18 @@ public class WorkflowResource {
     @PostMapping(value = "execute/{name}", produces = APPLICATION_JSON_VALUE)
     @Operation(
             summary =
-                    "Execute a workflow in synchronous mode. Returns the Output of the workflow instance")
-    public ResponseEntity<Object> executeWorkflow(
+                    "Execute a workflow in synchronous mode. Returns the Workflow object if it reaches a terminal state.")
+    public Map<String, Object> executeWorkflow(
             @PathVariable("name") String name,
             @RequestParam(value = "version", required = false) Integer version,
             @RequestParam(value = "correlationId", required = false) String correlationId,
             @RequestParam(value = "priority", defaultValue = "0", required = false) int priority,
             @RequestParam(value = "timeoutMs", defaultValue = "5000") long timeoutMs,
             @RequestBody Map<String, Object> input) {
-
-        try {
-            final String instanceId =
-                    workflowService.startWorkflow(name, version, correlationId, priority, input);
-            long startTime = System.currentTimeMillis();
-
-            while (true) {
-                final Workflow workflow = workflowService.getExecutionStatus(instanceId, true);
-                Workflow.WorkflowStatus status = workflow.getStatus();
-
-                switch (status) {
-                    case COMPLETED:
-                        return ResponseEntity.ok(workflow.getOutput());
-
-                    case RUNNING:
-                        // Verificar si se excede el tiempo máximo
-                        if (System.currentTimeMillis() - startTime > timeoutMs) {
-                            return ResponseEntity.status(HttpStatus.REQUEST_TIMEOUT)
-                                    .body("Status: wait_timeout. execution-id: " + instanceId);
-                        }
-                        Thread.sleep(100);
-                        break;
-
-                    case TIMED_OUT:
-                        return ResponseEntity.status(HttpStatus.REQUEST_TIMEOUT)
-                                .body("Status: workflow_timeout");
-                    case FAILED:
-                    case TERMINATED:
-                    case PAUSED:
-                        return ResponseEntity.ok("Status: " + status);
-
-                    default:
-                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                .body("Estado desconocido del workflow: " + status);
-                }
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt(); // Restaurar el estado de interrupción del hilo
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("La operación fue interrumpida: " + e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error inesperado al procesar el workflow: " + e.getMessage());
-        }
+        return workflowService
+                .executeWorkflowSynchronously(
+                        name, version, correlationId, priority, input, timeoutMs)
+                .getOutput();
     }
 
     @GetMapping("/{name}/correlated/{correlationId}")

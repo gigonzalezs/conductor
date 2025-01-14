@@ -25,6 +25,7 @@ import com.netflix.conductor.common.run.ExternalStorageLocation;
 import com.netflix.conductor.common.run.SearchResult;
 import com.netflix.conductor.common.run.Workflow;
 import com.netflix.conductor.common.run.WorkflowSummary;
+import com.netflix.conductor.core.exception.WorkflowTimeoutException;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -103,6 +104,28 @@ public interface WorkflowService {
             String correlationId,
             boolean includeClosed,
             boolean includeTasks);
+
+    /**
+     * Execute a workflow in synchronous mode, waiting for its completion or a timeout.
+     *
+     * @param name Name of the workflow to execute.
+     * @param version Version of the workflow to execute.
+     * @param correlationId Correlation ID for the workflow.
+     * @param priority Priority of the workflow.
+     * @param input Input parameters for the workflow.
+     * @param timeoutMs Maximum time in milliseconds to wait for the workflow to complete.
+     * @return The Workflow object if it reaches a terminal state, or throws an exception on
+     *     timeout.
+     * @throws WorkflowTimeoutException if the workflow does not complete within the timeout period.
+     */
+    public Workflow executeWorkflowSynchronously(
+            @NotEmpty(message = "Workflow name cannot be null or empty") String name,
+            Integer version,
+            String correlationId,
+            int priority,
+            Map<String, Object> input,
+            long timeoutMs)
+            throws WorkflowTimeoutException;
 
     /**
      * Lists workflows for the given correlation id.

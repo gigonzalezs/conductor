@@ -30,6 +30,7 @@ import com.netflix.conductor.common.run.SearchResult;
 import com.netflix.conductor.common.run.Workflow;
 import com.netflix.conductor.common.run.WorkflowSummary;
 import com.netflix.conductor.core.exception.NotFoundException;
+import com.netflix.conductor.core.exception.WorkflowTimeoutException;
 import com.netflix.conductor.core.execution.StartWorkflowInput;
 import com.netflix.conductor.core.execution.WorkflowExecutor;
 import com.netflix.conductor.core.utils.Utils;
@@ -165,6 +166,69 @@ public class WorkflowServiceImpl implements WorkflowService {
             workflowMap.put(correlationId, workflows);
         }
         return workflowMap;
+    }
+
+    /**
+     * Execute a workflow in synchronous mode, waiting for its completion or a timeout.
+     *
+     * @param name Name of the workflow to execute.
+     * @param version Version of the workflow to execute.
+     * @param correlationId Correlation ID for the workflow.
+     * @param priority Priority of the workflow.
+     * @param input Input parameters for the workflow.
+     * @param timeoutMs Maximum time in milliseconds to wait for the workflow to complete.
+     * @return The Workflow object if it reaches a terminal state, or throws an exception on
+     *     timeout.
+     * @throws WorkflowTimeoutException if the workflow does not complete within the timeout period.
+     */
+    public Workflow executeWorkflowSynchronously(
+            String name,
+            Integer version,
+            String correlationId,
+            int priority,
+            Map<String, Object> input,
+            long timeoutMs)
+            throws WorkflowTimeoutException {
+        try {
+            final String instanceId = startWorkflow(name, version, correlationId, priority, input);
+            long startTime = System.currentTimeMillis();
+
+            while (true) {
+                final Workflow workflow = getExecutionStatus(instanceId, true);
+                Workflow.WorkflowStatus status = workflow.getStatus();
+
+                switch (status) {
+                    case COMPLETED:
+                    case FAILED:
+                    case TERMINATED:
+                    case PAUSED:
+                        return workflow;
+                    case TIMED_OUT:
+                        throw new WorkflowTimeoutException(
+                                "Workflow execution exceeded the timeout. Workflow ID: "
+                                        + instanceId);
+                    case RUNNING:
+                        // Check if the timeout has been exceeded
+                        if (System.currentTimeMillis() - startTime > timeoutMs) {
+                            throw new WorkflowTimeoutException(
+                                    "Workflow execution exceeded the wait timeout. Workflow ID: "
+                                            + instanceId);
+                        }
+                        Thread.sleep(100);
+                        break;
+
+                    default:
+                        throw new IllegalStateException("Unknown workflow status: " + status);
+                }
+            }
+        } catch (WorkflowTimeoutException e) {
+            throw e;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt(); // Restore interrupt status
+            throw new RuntimeException("The operation was interrupted", e);
+        } catch (Exception e) {
+            throw new RuntimeException("Unexpected error while processing the workflow", e);
+        }
     }
 
     /**
