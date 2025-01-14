@@ -20,6 +20,8 @@ import java.util.Map;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mock;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 
 import com.netflix.conductor.common.metadata.workflow.RerunWorkflowRequest;
 import com.netflix.conductor.common.metadata.workflow.StartWorkflowRequest;
@@ -36,10 +38,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 public class WorkflowResourceTest {
 
@@ -82,6 +81,247 @@ public class WorkflowResourceTest {
     }
 
     @Test
+    public void testExecuteWorkflowCompletedStatus() {
+        // Mock inputs
+        String workflowName = "testWorkflow";
+        String instanceId = "instance123";
+        Map<String, Object> input = new HashMap<>();
+        input.put("key", "value");
+        Map<String, Object> output = new HashMap<>();
+        output.put("result", "success");
+
+        // Mock behavior
+        when(mockWorkflowService.startWorkflow(
+                        anyString(), anyInt(), anyString(), anyInt(), anyMap()))
+                .thenReturn(instanceId);
+        Workflow workflow = new Workflow();
+        workflow.setStatus(Workflow.WorkflowStatus.COMPLETED);
+        workflow.setOutput(output);
+        when(mockWorkflowService.getExecutionStatus(anyString(), anyBoolean()))
+                .thenReturn(workflow);
+
+        // Execute the method
+        ResponseEntity<Object> response =
+                workflowResource.executeWorkflow(workflowName, 1, "correlation123", 0, 5000, input);
+
+        // Assert the response
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(output, response.getBody());
+
+        // Verify interactions
+        verify(mockWorkflowService, times(1))
+                .startWorkflow(anyString(), anyInt(), anyString(), anyInt(), anyMap());
+        verify(mockWorkflowService, times(1)).getExecutionStatus(anyString(), anyBoolean());
+    }
+
+    @Test
+    public void testExecuteWorkflowRunningStatus() {
+        // Mock inputs
+        String workflowName = "testWorkflow";
+        String instanceId = "instance123";
+        Map<String, Object> input = new HashMap<>();
+        input.put("key", "value");
+        Map<String, Object> output = new HashMap<>();
+        output.put("result", "success");
+
+        // Mock behavior
+        when(mockWorkflowService.startWorkflow(
+                        anyString(), anyInt(), anyString(), anyInt(), anyMap()))
+                .thenReturn(instanceId);
+
+        // Simulate the first call to getExecutionStatus returning RUNNING
+        Workflow runningWorkflow = new Workflow();
+        runningWorkflow.setStatus(Workflow.WorkflowStatus.RUNNING);
+
+        // Simulate the second call to getExecutionStatus returning COMPLETED with output
+        Workflow completedWorkflow = new Workflow();
+        completedWorkflow.setStatus(Workflow.WorkflowStatus.COMPLETED);
+        completedWorkflow.setOutput(output);
+
+        when(mockWorkflowService.getExecutionStatus(anyString(), anyBoolean()))
+                .thenReturn(runningWorkflow) // First call returns RUNNING
+                .thenReturn(completedWorkflow); // Second call returns COMPLETED
+
+        // Execute the method
+        ResponseEntity<Object> response =
+                workflowResource.executeWorkflow(workflowName, 1, "correlation123", 0, 5000, input);
+
+        // Assert the response
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(output, response.getBody());
+
+        // Verify interactions
+        verify(mockWorkflowService, times(1))
+                .startWorkflow(anyString(), anyInt(), anyString(), anyInt(), anyMap());
+        verify(mockWorkflowService, times(2)).getExecutionStatus(anyString(), anyBoolean());
+    }
+
+    @Test
+    public void testExecuteWorkflowTimeout() {
+        // Mock inputs
+        String workflowName = "testWorkflow";
+        String instanceId = "instance123";
+        Map<String, Object> input = new HashMap<>();
+        input.put("key", "value");
+
+        // Mock behavior
+        when(mockWorkflowService.startWorkflow(
+                        anyString(), anyInt(), anyString(), anyInt(), anyMap()))
+                .thenReturn(instanceId);
+
+        // Simulate the workflow staying in RUNNING state
+        Workflow runningWorkflow = new Workflow();
+        runningWorkflow.setStatus(Workflow.WorkflowStatus.RUNNING);
+        when(mockWorkflowService.getExecutionStatus(anyString(), anyBoolean()))
+                .thenReturn(runningWorkflow);
+
+        // Execute the method with a timeout of 2000ms
+        ResponseEntity<Object> response =
+                workflowResource.executeWorkflow(workflowName, 1, "correlation123", 0, 2000, input);
+
+        // Assert the response
+        assertEquals(HttpStatus.REQUEST_TIMEOUT, response.getStatusCode());
+        assertEquals("Status: wait_timeout. execution-id: " + instanceId, response.getBody());
+
+        // Verify interactions
+        verify(mockWorkflowService, times(1))
+                .startWorkflow(anyString(), anyInt(), anyString(), anyInt(), anyMap());
+        verify(mockWorkflowService, atLeastOnce()).getExecutionStatus(anyString(), anyBoolean());
+    }
+
+    @Test
+    public void testExecuteWorkflowFailedStatus() {
+        // Mock inputs
+        String workflowName = "testWorkflow";
+        String instanceId = "instance123";
+        Map<String, Object> input = new HashMap<>();
+        input.put("key", "value");
+
+        // Mock behavior
+        when(mockWorkflowService.startWorkflow(
+                        anyString(), anyInt(), anyString(), anyInt(), anyMap()))
+                .thenReturn(instanceId);
+
+        // Simulate the workflow reaching the FAILED state
+        Workflow failedWorkflow = new Workflow();
+        failedWorkflow.setStatus(Workflow.WorkflowStatus.FAILED);
+        when(mockWorkflowService.getExecutionStatus(anyString(), anyBoolean()))
+                .thenReturn(failedWorkflow);
+
+        // Execute the method
+        ResponseEntity<Object> response =
+                workflowResource.executeWorkflow(workflowName, 1, "correlation123", 0, 5000, input);
+
+        // Assert the response
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("Status: FAILED", response.getBody());
+
+        // Verify interactions
+        verify(mockWorkflowService, times(1))
+                .startWorkflow(anyString(), anyInt(), anyString(), anyInt(), anyMap());
+        verify(mockWorkflowService, times(1)).getExecutionStatus(anyString(), anyBoolean());
+    }
+
+    @Test
+    public void testExecuteWorkflowTimedOutStatus() {
+        // Mock inputs
+        String workflowName = "testWorkflow";
+        String instanceId = "instance123";
+        Map<String, Object> input = new HashMap<>();
+        input.put("key", "value");
+
+        // Mock behavior
+        when(mockWorkflowService.startWorkflow(
+                        anyString(), anyInt(), anyString(), anyInt(), anyMap()))
+                .thenReturn(instanceId);
+
+        // Simulate the workflow reaching the TIMED_OUT state
+        Workflow timedOutWorkflow = new Workflow();
+        timedOutWorkflow.setStatus(Workflow.WorkflowStatus.TIMED_OUT);
+        when(mockWorkflowService.getExecutionStatus(anyString(), anyBoolean()))
+                .thenReturn(timedOutWorkflow);
+
+        // Execute the method
+        ResponseEntity<Object> response =
+                workflowResource.executeWorkflow(workflowName, 1, "correlation123", 0, 5000, input);
+
+        // Assert the response
+        assertEquals(HttpStatus.REQUEST_TIMEOUT, response.getStatusCode());
+        assertEquals("Status: workflow_timeout", response.getBody());
+
+        // Verify interactions
+        verify(mockWorkflowService, times(1))
+                .startWorkflow(anyString(), anyInt(), anyString(), anyInt(), anyMap());
+        verify(mockWorkflowService, times(1)).getExecutionStatus(anyString(), anyBoolean());
+    }
+
+    @Test
+    public void testExecuteWorkflowTerminatedStatus() {
+        // Mock inputs
+        String workflowName = "testWorkflow";
+        String instanceId = "instance123";
+        Map<String, Object> input = new HashMap<>();
+        input.put("key", "value");
+
+        // Mock behavior
+        when(mockWorkflowService.startWorkflow(
+                        anyString(), anyInt(), anyString(), anyInt(), anyMap()))
+                .thenReturn(instanceId);
+
+        // Simulate the workflow reaching the TERMINATED state
+        Workflow terminatedWorkflow = new Workflow();
+        terminatedWorkflow.setStatus(Workflow.WorkflowStatus.TERMINATED);
+        when(mockWorkflowService.getExecutionStatus(anyString(), anyBoolean()))
+                .thenReturn(terminatedWorkflow);
+
+        // Execute the method
+        ResponseEntity<Object> response =
+                workflowResource.executeWorkflow(workflowName, 1, "correlation123", 0, 5000, input);
+
+        // Assert the response
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("Status: TERMINATED", response.getBody());
+
+        // Verify interactions
+        verify(mockWorkflowService, times(1))
+                .startWorkflow(anyString(), anyInt(), anyString(), anyInt(), anyMap());
+        verify(mockWorkflowService, times(1)).getExecutionStatus(anyString(), anyBoolean());
+    }
+
+    @Test
+    public void testExecuteWorkflowPausedStatus() {
+        // Mock inputs
+        String workflowName = "testWorkflow";
+        String instanceId = "instance123";
+        Map<String, Object> input = new HashMap<>();
+        input.put("key", "value");
+
+        // Mock behavior
+        when(mockWorkflowService.startWorkflow(
+                        anyString(), anyInt(), anyString(), anyInt(), anyMap()))
+                .thenReturn(instanceId);
+
+        // Simulate the workflow reaching the PAUSED state
+        Workflow pausedWorkflow = new Workflow();
+        pausedWorkflow.setStatus(Workflow.WorkflowStatus.PAUSED);
+        when(mockWorkflowService.getExecutionStatus(anyString(), anyBoolean()))
+                .thenReturn(pausedWorkflow);
+
+        // Execute the method
+        ResponseEntity<Object> response =
+                workflowResource.executeWorkflow(workflowName, 1, "correlation123", 0, 5000, input);
+
+        // Assert the response
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("Status: PAUSED", response.getBody());
+
+        // Verify interactions
+        verify(mockWorkflowService, times(1))
+                .startWorkflow(anyString(), anyInt(), anyString(), anyInt(), anyMap());
+        verify(mockWorkflowService, times(1)).getExecutionStatus(anyString(), anyBoolean());
+    }
+
+    @Test
     public void getWorkflows() {
         Workflow workflow = new Workflow();
         workflow.setCorrelationId("123");
@@ -94,6 +334,102 @@ public class WorkflowResourceTest {
         when(mockWorkflowService.getWorkflows(anyString(), anyString(), anyBoolean(), anyBoolean()))
                 .thenReturn(listOfWorkflows);
         assertEquals(listOfWorkflows, workflowResource.getWorkflows("test1", "123", true, true));
+    }
+
+    @Test
+    public void testExecuteWorkflowInterruptedException() {
+        // Mock inputs
+        String workflowName = "testWorkflow";
+        String instanceId = "instance123";
+        Map<String, Object> input = new HashMap<>();
+        input.put("key", "value");
+
+        // Mock behavior
+        when(mockWorkflowService.startWorkflow(
+                        anyString(), anyInt(), anyString(), anyInt(), anyMap()))
+                .thenReturn(instanceId);
+
+        // Simulate an InterruptedException during execution
+        Workflow runningWorkflow = new Workflow();
+        runningWorkflow.setStatus(Workflow.WorkflowStatus.RUNNING);
+        when(mockWorkflowService.getExecutionStatus(anyString(), anyBoolean()))
+                .thenReturn(runningWorkflow);
+
+        // Mock the interruption
+        Thread.currentThread().interrupt();
+
+        // Execute the method
+        ResponseEntity<Object> response =
+                workflowResource.executeWorkflow(workflowName, 1, "correlation123", 0, 5000, input);
+
+        // Assert the response
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+        assertEquals("La operación fue interrumpida: sleep interrupted", response.getBody());
+
+        // Verify interactions
+        verify(mockWorkflowService, times(1))
+                .startWorkflow(anyString(), anyInt(), anyString(), anyInt(), anyMap());
+        verify(mockWorkflowService, atLeast(1)).getExecutionStatus(anyString(), anyBoolean());
+    }
+
+    @Test
+    public void testExecuteWorkflowServiceException() {
+        // Mock inputs
+        String workflowName = "testWorkflow";
+        String instanceId = "instance123";
+        Map<String, Object> input = new HashMap<>();
+        input.put("key", "value");
+
+        // Mock behavior
+        when(mockWorkflowService.startWorkflow(
+                        anyString(), anyInt(), anyString(), anyInt(), anyMap()))
+                .thenReturn(instanceId);
+
+        // Simulate an exception thrown by the workflow service
+        when(mockWorkflowService.getExecutionStatus(anyString(), anyBoolean()))
+                .thenThrow(new RuntimeException("Service failure"));
+
+        // Execute the method
+        ResponseEntity<Object> response =
+                workflowResource.executeWorkflow(workflowName, 1, "correlation123", 0, 5000, input);
+
+        // Assert the response
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+        assertEquals(
+                "Error inesperado al procesar el workflow: Service failure", response.getBody());
+
+        // Verify interactions
+        verify(mockWorkflowService, times(1))
+                .startWorkflow(anyString(), anyInt(), anyString(), anyInt(), anyMap());
+        verify(mockWorkflowService, times(1)).getExecutionStatus(anyString(), anyBoolean());
+    }
+
+    @Test
+    public void testExecuteWorkflowStartWorkflowException() {
+        // Mock inputs
+        String workflowName = "testWorkflow";
+        Map<String, Object> input = new HashMap<>();
+        input.put("key", "value");
+
+        // Simulate an exception thrown by startWorkflow
+        when(mockWorkflowService.startWorkflow(
+                        anyString(), anyInt(), anyString(), anyInt(), anyMap()))
+                .thenThrow(new RuntimeException("Start workflow failed"));
+
+        // Execute the method
+        ResponseEntity<Object> response =
+                workflowResource.executeWorkflow(workflowName, 1, "correlation123", 0, 5000, input);
+
+        // Assert the response
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+        assertEquals(
+                "Error inesperado al procesar el workflow: Start workflow failed",
+                response.getBody());
+
+        // Verify interactions
+        verify(mockWorkflowService, times(1))
+                .startWorkflow(anyString(), anyInt(), anyString(), anyInt(), anyMap());
+        verify(mockWorkflowService, times(0)).getExecutionStatus(anyString(), anyBoolean());
     }
 
     @Test
