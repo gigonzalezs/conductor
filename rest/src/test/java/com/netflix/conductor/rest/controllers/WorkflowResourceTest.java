@@ -83,7 +83,7 @@ public class WorkflowResourceTest {
     }
 
     @Test
-    public void testExecuteWorkflowSynchronouslyTimeout() {
+    public void testExecuteWorkflowSynchronouslyExceedsTimeout() {
         Map<String, Object> input = new HashMap<>();
         input.put("1", "abc");
         String workflowID = "w112";
