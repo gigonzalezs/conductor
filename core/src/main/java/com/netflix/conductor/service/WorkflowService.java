@@ -14,6 +14,7 @@ package com.netflix.conductor.service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import org.springframework.validation.annotation.Validated;
 
@@ -88,6 +89,24 @@ public interface WorkflowService {
             String externalInputPayloadStoragePath,
             Map<String, String> taskToDomain,
             WorkflowDef workflowDef);
+
+    /**
+     * Execute a workflow in synchronous mode, waiting for its completion or a timeout.
+     *
+     * @param name Name of the workflow to execute.
+     * @param version Version of the workflow to execute.
+     * @param correlationId Correlation ID for the workflow.
+     * @param priority Priority of the workflow.
+     * @param input Input parameters for the workflow.
+     * @return The Workflow object if it reaches a terminal state, or throws an exception on
+     *     timeout.
+     */
+    public CompletableFuture<Workflow> executeWorkflowSynchronously(
+            String name,
+            Integer version,
+            String correlationId,
+            int priority,
+            Map<String, Object> input);
 
     /**
      * Lists workflows for the given correlation id.

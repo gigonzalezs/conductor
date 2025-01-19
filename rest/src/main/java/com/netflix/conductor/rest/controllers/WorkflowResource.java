@@ -14,6 +14,8 @@ package com.netflix.conductor.rest.controllers;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -74,6 +76,23 @@ public class WorkflowResource {
             @RequestParam(value = "priority", defaultValue = "0", required = false) int priority,
             @RequestBody Map<String, Object> input) {
         return workflowService.startWorkflow(name, version, correlationId, priority, input);
+    }
+
+    @PostMapping(value = "execute/{name}", produces = APPLICATION_JSON_VALUE)
+    @Operation(
+            summary =
+                    "Execute a workflow in synchronous mode. Returns the Workflow output if it reaches a terminal state.")
+    public CompletableFuture<Map<String, Object>> executeWorkflowSynchronously(
+            @PathVariable("name") String name,
+            @RequestParam(value = "version", required = false) Integer version,
+            @RequestParam(value = "correlationId", required = false) String correlationId,
+            @RequestParam(value = "priority", defaultValue = "0", required = false) int priority,
+            @RequestParam(value = "timeoutMs", defaultValue = "5000") long timeoutMs,
+            @RequestBody Map<String, Object> input) {
+        return workflowService
+                .executeWorkflowSynchronously(name, version, correlationId, priority, input)
+                .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                .thenApply(Workflow::getOutput);
     }
 
     @GetMapping("/{name}/correlated/{correlationId}")

@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -27,7 +28,7 @@ import com.netflix.conductor.common.run.Workflow;
 import com.netflix.conductor.service.WorkflowService;
 import com.netflix.conductor.service.WorkflowTestService;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -79,6 +80,83 @@ public class WorkflowResourceTest {
                         anyString(), anyInt(), anyString(), anyInt(), anyMap()))
                 .thenReturn(workflowID);
         assertEquals("w112", workflowResource.startWorkflow("test1", 1, "c123", 0, input));
+    }
+
+    @Test
+    public void testExecuteWorkflowSynchronouslyTimeout() {
+        Map<String, Object> input = new HashMap<>();
+        input.put("1", "abc");
+        String workflowID = "w112";
+        int version = 1;
+        String correlationId = "correlationId";
+        int priority = 0;
+        int timeout = 100;
+
+        // Mock the service to return an uncompleted CompletableFuture
+        when(mockWorkflowService.executeWorkflowSynchronously(
+                        anyString(), anyInt(), anyString(), anyInt(), anyMap()))
+                .thenReturn(new CompletableFuture<>());
+
+        // Perform the test
+        Exception exception =
+                assertThrows(
+                        Exception.class,
+                        () -> {
+                            workflowResource
+                                    .executeWorkflowSynchronously(
+                                            workflowID,
+                                            version,
+                                            correlationId,
+                                            priority,
+                                            timeout,
+                                            input)
+                                    .get();
+                        });
+
+        // Validate that the exception is caused by a timeout
+        assertTrue(exception.getCause() instanceof java.util.concurrent.TimeoutException);
+
+        // Verify that the mock service was called exactly once
+        verify(mockWorkflowService, times(1))
+                .executeWorkflowSynchronously(
+                        anyString(), anyInt(), anyString(), anyInt(), anyMap());
+    }
+
+    @Test
+    public void testExecuteWorkflowSynchronouslySuccess() throws Exception {
+        Map<String, Object> input = new HashMap<>();
+        input.put("1", "abc");
+        String workflowID = "w112";
+        int version = 1;
+        String correlationId = "correlationId";
+        int priority = 0;
+        int timeout = 5000;
+
+        // Mock the output of the workflow
+        Workflow mockWorkflow = new Workflow();
+        Map<String, Object> output = new HashMap<>();
+        output.put("result", "success");
+        mockWorkflow.setOutput(output);
+
+        // Mock the service to return a completed CompletableFuture with the mock workflow
+        when(mockWorkflowService.executeWorkflowSynchronously(
+                        anyString(), anyInt(), anyString(), anyInt(), anyMap()))
+                .thenReturn(CompletableFuture.completedFuture(mockWorkflow));
+
+        // Perform the test
+        Map<String, Object> result =
+                workflowResource
+                        .executeWorkflowSynchronously(
+                                workflowID, version, correlationId, priority, timeout, input)
+                        .get();
+
+        // Validate the result
+        assertEquals("success", result.get("result"));
+
+        // Verify that the mock service was called exactly once
+        verify(mockWorkflowService, times(1))
+                .executeWorkflowSynchronously(
+                        anyString(), anyInt(), anyString(), anyInt(), anyMap());
     }
 
     @Test
