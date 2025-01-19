@@ -16,6 +16,7 @@ import java.util.*;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import com.netflix.conductor.core.observer.WorkflowStatusPublisher;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.slf4j.Logger;
@@ -82,6 +83,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
     private final SystemTaskRegistry systemTaskRegistry;
     private long activeWorkerLastPollMs;
     private final ExecutionLockService executionLockService;
+    private final WorkflowStatusPublisher workflowStatusPublisher;
 
     private final Predicate<PollData> validateLastPolledTime =
             pollData ->
@@ -100,7 +102,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
             ExecutionLockService executionLockService,
             SystemTaskRegistry systemTaskRegistry,
             ParametersUtils parametersUtils,
-            IDGenerator idGenerator) {
+            IDGenerator idGenerator, WorkflowStatusPublisher workflowStatusPublisher) {
         this.deciderService = deciderService;
         this.metadataDAO = metadataDAO;
         this.queueDAO = queueDAO;
@@ -114,6 +116,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
         this.parametersUtils = parametersUtils;
         this.idGenerator = idGenerator;
         this.systemTaskRegistry = systemTaskRegistry;
+        this.workflowStatusPublisher = workflowStatusPublisher;
     }
 
     /**
@@ -1048,6 +1051,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
      */
     private WorkflowModel decide(WorkflowModel workflow) {
         if (workflow.getStatus().isTerminal()) {
+            workflowStatusPublisher.notify(workflow.getWorkflowId(), workflow.getStatus());
             if (!workflow.getStatus().isSuccessful()) {
                 cancelNonTerminalTasks(workflow);
             }
@@ -1062,6 +1066,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
             DeciderService.DeciderOutcome outcome = deciderService.decide(workflow);
             if (outcome.isComplete) {
                 endExecution(workflow, outcome.terminateTask);
+                workflowStatusPublisher.notify(workflow.getWorkflowId(), workflow.getStatus());
                 return workflow;
             }
 
@@ -1104,6 +1109,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
         } catch (TerminateWorkflowException twe) {
             LOGGER.info("Execution terminated of workflow: {}", workflow, twe);
             terminate(workflow, twe);
+            workflowStatusPublisher.notify(workflow.getWorkflowId(), workflow.getStatus());
             return workflow;
         } catch (RuntimeException e) {
             LOGGER.error("Error deciding workflow: {}", workflow.getWorkflowId(), e);

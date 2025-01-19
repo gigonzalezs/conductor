@@ -149,7 +149,7 @@ public class WorkflowServiceImpl implements WorkflowService {
             String correlationId,
             int priority,
             Map<String, Object> input) {
-        // final String instanceId = startWorkflow(name, version, correlationId, priority, input);
+        final String instanceId = startWorkflow(name, version, correlationId, priority, input);
         final CompletableFuture<Workflow> executionResult = new CompletableFuture<>();
         return executionResult;
     }
